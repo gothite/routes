@@ -12,6 +12,7 @@ import (
 // Route implements Resolver interface.
 type Route struct {
 	pattern *regexp.Regexp
+	re      *syntax.Regexp
 	handler func(http.ResponseWriter, *http.Request, map[string]string)
 	name    string
 }
@@ -23,10 +24,9 @@ func (route *Route) Name() string {
 
 // Reverse makes URL path using parameters as values for groups of regular expression.
 func (route *Route) Reverse(name string, parameters map[string]string) (path string, found bool) {
-	re, _ := syntax.Parse(route.pattern.String(), syntax.Perl)
-	path = re.String()
+	path = route.re.String()
 
-	for _, sub := range re.Sub {
+	for _, sub := range route.re.Sub {
 		if value, exists := parameters[sub.Name]; exists {
 			path = strings.Replace(path, sub.String(), value, -1)
 		}
@@ -67,5 +67,7 @@ func NewRoute(pattern string, handler func(http.ResponseWriter, *http.Request, m
 		}
 	}
 
-	return &Route{re, handler, name}
+	ast, _ := syntax.Parse(re.String(), syntax.Perl)
+
+	return &Route{re, ast, handler, name}
 }
