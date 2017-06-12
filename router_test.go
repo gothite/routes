@@ -9,8 +9,7 @@ import (
 )
 
 func TestRouterName(test *testing.T) {
-	handler := func(response http.ResponseWriter, request *http.Request, options map[string]string) {}
-	instance := NewRouter("/", "namespace", NewRoute("/", handler, "test"))
+	instance := NewRouter("/", "namespace", NewRoute("/", Handler{"path"}, "test"))
 
 	if want := instance.Name(); instance.namespace != want {
 		test.Errorf("wrong name: got %v, want %v", instance.namespace, want)
@@ -23,8 +22,7 @@ func TestRouterResolve(test *testing.T) {
 	prefix := "prefix"
 	name := "test"
 	path := strings.Join([]string{"", prefix, "path"}, "/")
-	handler := func(response http.ResponseWriter, request *http.Request, options map[string]string) {}
-	instance := NewRouter(prefix, "test", NewRoute(pattern, handler, name))
+	instance := NewRouter(prefix, "test", NewRoute(pattern, Handler{"path"}, name))
 
 	if want := strings.Join([]string{"/", prefix}, ""); instance.prefix != want {
 		test.Errorf("wrong prepared pattern: got %v, want %v", instance.prefix, want)
@@ -57,18 +55,15 @@ func TestRouterResolve(test *testing.T) {
 func TestRouterHandle(test *testing.T) {
 	pattern := "(?P<path>path)"
 	prefix := "prefix"
-	path := strings.Join([]string{"", prefix, "path"}, "/")
+	option := "path"
+	path := strings.Join([]string{"", prefix, option}, "/")
 	request, _ := http.NewRequest("GET", path, nil)
 
-	handler := func(response http.ResponseWriter, request *http.Request, options map[string]string) {
-		response.Write([]byte(request.URL.Path))
-	}
-
-	instance := NewRouter(prefix, "test", NewRoute(pattern, handler, "test"))
+	instance := NewRouter(prefix, "test", NewRoute(pattern, Handler{"path"}, "test"))
 
 	mock := httptest.NewRecorder()
 
-	http.HandlerFunc(instance.Handle).ServeHTTP(mock, request)
+	instance.ServeHTTP(mock, request)
 
 	if status := mock.Code; status != http.StatusOK {
 		test.Errorf("handler returned wrong status code: got %v, want %v",
@@ -76,16 +71,16 @@ func TestRouterHandle(test *testing.T) {
 		return
 	}
 
-	if mock.Body.String() != request.URL.Path {
+	if mock.Body.String() != option {
 		test.Errorf("handler returned unexpected body: got %v, want %v",
-			mock.Body.String(), request.URL.Path)
+			mock.Body.String(), option)
 		return
 	}
 
 	request, _ = http.NewRequest("GET", "wrong", nil)
 	mock = httptest.NewRecorder()
 
-	http.HandlerFunc(instance.Handle).ServeHTTP(mock, request)
+	instance.ServeHTTP(mock, request)
 
 	if status := mock.Code; status != http.StatusNotFound {
 		test.Errorf("handler returned wrong status code: got %v, want %v",
@@ -99,17 +94,18 @@ func TestRouterReverse(test *testing.T) {
 	prefix := "prefix"
 	name := "test"
 	namespace := "root"
-	handler := func(response http.ResponseWriter, request *http.Request, options map[string]string) {}
-	instance := NewRouter(prefix, namespace, NewRoute(pattern, handler, name))
+	option := "path"
 
-	path, found := instance.Reverse(name, map[string]string{"path": "test"})
+	instance := NewRouter(prefix, namespace, NewRoute(pattern, Handler{"path"}, name))
+
+	path, found := instance.Reverse(name, map[string]string{"path": option})
 
 	if !found {
 		test.Error("route not reversed")
 		return
 	}
 
-	if want := "/prefix/test"; path != want {
+	if want := fmt.Sprintf("/%v/%v", prefix, option); path != want {
 		test.Errorf("wrong prepared pattern: got %v, want %v", instance.prefix, want)
 		return
 	}

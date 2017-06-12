@@ -1,13 +1,17 @@
 package routes
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
 )
 
+// Key is a type for context keys.
+type Key string
+
 // Router is a group of resolvers.
-// Router implements Resolver interface.
+// Router implements Resolver and http.Handler interface.
 type Router struct {
 	prefix    string
 	namespace string
@@ -17,6 +21,11 @@ type Router struct {
 // Name returns router name (namespace).
 func (router *Router) Name() string {
 	return router.namespace
+}
+
+// ServeHTTP impelements http.Handler.ServeHTTP.
+func (router *Router) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	router.Handle(response, request)
 }
 
 // Add adds new resolver to router.
@@ -59,7 +68,13 @@ func (router *Router) Resolve(path string) (*Route, bool) {
 // If route not found, Handle will write header http.StatusNotFound.
 func (router *Router) Handle(response http.ResponseWriter, request *http.Request) {
 	if route, found := router.Resolve(request.URL.Path); found {
-		route.handler(response, request, route.GetGroups(request.URL.Path))
+		ctx := request.Context()
+
+		for key, value := range route.GetGroups(request.URL.Path) {
+			ctx = context.WithValue(ctx, Key(key), value)
+		}
+
+		route.handler.ServeHTTP(response, request.WithContext(ctx))
 	} else {
 		response.WriteHeader(http.StatusNotFound)
 	}
