@@ -9,8 +9,7 @@ import (
 )
 
 func TestRouterName(test *testing.T) {
-	handler := func(response http.ResponseWriter, request *http.Request) {}
-	instance := NewRouter("/", "namespace", NewRoute("/", handler, "test"))
+	instance := NewRouter("/", "namespace", NewRoute("/", Handler{"path"}, "test"))
 
 	if want := instance.Name(); instance.namespace != want {
 		test.Errorf("wrong name: got %v, want %v", instance.namespace, want)
@@ -23,8 +22,7 @@ func TestRouterResolve(test *testing.T) {
 	prefix := "prefix"
 	name := "test"
 	path := strings.Join([]string{"", prefix, "path"}, "/")
-	handler := func(response http.ResponseWriter, request *http.Request) {}
-	instance := NewRouter(prefix, "test", NewRoute(pattern, handler, name))
+	instance := NewRouter(prefix, "test", NewRoute(pattern, Handler{"path"}, name))
 
 	if want := strings.Join([]string{"/", prefix}, ""); instance.prefix != want {
 		test.Errorf("wrong prepared pattern: got %v, want %v", instance.prefix, want)
@@ -61,11 +59,7 @@ func TestRouterHandle(test *testing.T) {
 	path := strings.Join([]string{"", prefix, option}, "/")
 	request, _ := http.NewRequest("GET", path, nil)
 
-	handler := func(response http.ResponseWriter, request *http.Request) {
-		response.Write([]byte(request.Context().Value(Key(option)).(string)))
-	}
-
-	instance := NewRouter(prefix, "test", NewRoute(pattern, handler, "test"))
+	instance := NewRouter(prefix, "test", NewRoute(pattern, Handler{"path"}, "test"))
 
 	mock := httptest.NewRecorder()
 
@@ -102,8 +96,7 @@ func TestRouterReverse(test *testing.T) {
 	namespace := "root"
 	option := "path"
 
-	handler := func(response http.ResponseWriter, request *http.Request) {}
-	instance := NewRouter(prefix, namespace, NewRoute(pattern, handler, name))
+	instance := NewRouter(prefix, namespace, NewRoute(pattern, Handler{"path"}, name))
 
 	path, found := instance.Reverse(name, map[string]string{"path": option})
 

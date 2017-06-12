@@ -69,7 +69,7 @@ func (router *Router) Handle(response http.ResponseWriter, request *http.Request
 			ctx = context.WithValue(ctx, Key(key), value)
 		}
 
-		route.handler(response, request.WithContext(ctx))
+		route.handler.ServeHTTP(response, request.WithContext(ctx))
 	} else {
 		response.WriteHeader(http.StatusNotFound)
 	}
