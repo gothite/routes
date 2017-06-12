@@ -11,7 +11,7 @@ import (
 type Key string
 
 // Router is a group of resolvers.
-// Router implements Resolver interface.
+// Router implements Resolver and http.Handler interface.
 type Router struct {
 	prefix    string
 	namespace string
@@ -21,6 +21,11 @@ type Router struct {
 // Name returns router name (namespace).
 func (router *Router) Name() string {
 	return router.namespace
+}
+
+// ServeHTTP impelements http.Handler.ServeHTTP.
+func (router *Router) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	router.Handle(response, request)
 }
 
 // Add adds new resolver to router.

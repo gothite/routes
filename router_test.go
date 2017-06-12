@@ -63,7 +63,7 @@ func TestRouterHandle(test *testing.T) {
 
 	mock := httptest.NewRecorder()
 
-	http.HandlerFunc(instance.Handle).ServeHTTP(mock, request)
+	instance.ServeHTTP(mock, request)
 
 	if status := mock.Code; status != http.StatusOK {
 		test.Errorf("handler returned wrong status code: got %v, want %v",
@@ -80,7 +80,7 @@ func TestRouterHandle(test *testing.T) {
 	request, _ = http.NewRequest("GET", "wrong", nil)
 	mock = httptest.NewRecorder()
 
-	http.HandlerFunc(instance.Handle).ServeHTTP(mock, request)
+	instance.ServeHTTP(mock, request)
 
 	if status := mock.Code; status != http.StatusNotFound {
 		test.Errorf("handler returned wrong status code: got %v, want %v",
