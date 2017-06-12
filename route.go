@@ -13,7 +13,7 @@ import (
 type Route struct {
 	pattern *regexp.Regexp
 	re      *syntax.Regexp
-	handler func(http.ResponseWriter, *http.Request, map[string]string)
+	handler func(http.ResponseWriter, *http.Request)
 	name    string
 }
 
@@ -57,7 +57,7 @@ func (route *Route) GetGroups(path string) map[string]string {
 }
 
 // NewRoute creates new Route instance.
-func NewRoute(pattern string, handler func(http.ResponseWriter, *http.Request, map[string]string), name string) *Route {
+func NewRoute(pattern string, handler func(http.ResponseWriter, *http.Request), name string) *Route {
 	pattern = fmt.Sprintf("/%v", strings.TrimPrefix(pattern, "/"))
 	re := regexp.MustCompile(pattern)
 

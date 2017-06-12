@@ -9,7 +9,7 @@ import (
 func TestRouteResolve(test *testing.T) {
 	pattern := "(?P<path>.*)"
 	path := "/path"
-	instance := NewRoute(pattern, func(response http.ResponseWriter, request *http.Request, options map[string]string) {}, "test")
+	instance := NewRoute(pattern, func(response http.ResponseWriter, request *http.Request) {}, "test")
 
 	if want := strings.Join([]string{"/", pattern}, ""); instance.pattern.String() != want {
 		test.Errorf("wrong prepared pattern: got %v, want %v", instance.pattern, want)
@@ -37,7 +37,7 @@ func TestRouteResolve(test *testing.T) {
 func TestRouteGetGroups(test *testing.T) {
 	pattern := "(?P<path>.*)"
 	path := "/path"
-	route := NewRoute(pattern, func(response http.ResponseWriter, request *http.Request, options map[string]string) {}, "test")
+	route := NewRoute(pattern, func(response http.ResponseWriter, request *http.Request) {}, "test")
 
 	matches := route.GetGroups(path)
 
@@ -54,13 +54,13 @@ func TestNewRoutePositionalGroups(test *testing.T) {
 		}
 	}()
 
-	NewRoute("(.*)", func(response http.ResponseWriter, request *http.Request, options map[string]string) {}, "test")
+	NewRoute("(.*)", func(response http.ResponseWriter, request *http.Request) {}, "test")
 }
 
 func TestRouteReverse(test *testing.T) {
 	pattern := "/prefix/(?P<path>.*)"
 	name := "test"
-	route := NewRoute(pattern, func(response http.ResponseWriter, request *http.Request, options map[string]string) {}, name)
+	route := NewRoute(pattern, func(response http.ResponseWriter, request *http.Request) {}, name)
 
 	path, found := route.Reverse(name, map[string]string{"path": "test"})
 

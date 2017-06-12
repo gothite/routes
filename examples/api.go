@@ -7,8 +7,9 @@ import (
 	"github.com/gothite/routes"
 )
 
-func handler(response http.ResponseWriter, request *http.Request, options map[string]string) {
-	response.Write([]byte(options["path"]))
+func handler(response http.ResponseWriter, request *http.Request) {
+	path := request.Context().Value(routes.Key("path")).(string)
+	response.Write([]byte(path))
 }
 
 func main() {
