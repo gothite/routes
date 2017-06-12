@@ -7,7 +7,9 @@ import (
 	"github.com/gothite/routes"
 )
 
-func handler(response http.ResponseWriter, request *http.Request) {
+type handler struct{}
+
+func (h handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	path := request.Context().Value(routes.Key("path")).(string)
 	response.Write([]byte(path))
 }
@@ -17,13 +19,13 @@ func main() {
 		"/api", "api",
 		routes.NewRouter(
 			"/v1", "v1",
-			routes.NewRoute("/(?P<path>.*)", handler, "endpoint"),
+			routes.NewRoute("/(?P<path>.*)", handler{}, "endpoint"),
 		),
 	)
 
 	path, _ := router.Reverse("v1:endpoint", map[string]string{"path": "test"})
 	log.Print(path) // /api/v1/test
 
-	http.HandleFunc("/", router.Handle)
+	http.Handle("/", router)
 	log.Fatal(http.ListenAndServe(":8000", nil))
 }
