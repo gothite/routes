@@ -7,18 +7,8 @@ import (
 	"strings"
 )
 
-// DefaultNotFoundHandler is a static instance of NotFoundHandler.
-var DefaultNotFoundHandler *NotFoundHandler
-
 // Key is a type for context keys.
 type Key string
-
-// NotFoundHandler is a handler which returns 404 Not Found.
-type NotFoundHandler struct{}
-
-func (handler *NotFoundHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	response.WriteHeader(http.StatusNotFound)
-}
 
 // Router is a group of resolvers.
 // Router implements Resolver and http.Handler interface.
@@ -72,7 +62,11 @@ func (router *Router) Resolve(path string) (*Route, bool) {
 		}
 	}
 
-	return router.defaultRoute, true
+	if router.defaultRoute != nil {
+		return router.defaultRoute, true
+	}
+
+	return nil, false
 }
 
 // Handle looking for route by path and delegates request to handler.
@@ -101,10 +95,6 @@ func NewRouter(prefix string, namespace string, defaultRoute *Route, resolvers .
 
 	for _, resolver := range resolvers {
 		router.Add(resolver)
-	}
-
-	if router.defaultRoute == nil {
-		router.defaultRoute = NewRoute("", DefaultNotFoundHandler, "")
 	}
 
 	return router
