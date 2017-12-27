@@ -17,8 +17,10 @@ func (h handler) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 func main() {
 	router := routes.NewRouter(
 		"/api", "api",
+		nil, // default route
 		routes.NewRouter(
 			"/v1", "v1",
+			nil, // default route
 			routes.NewRoute("/(?P<path>.*)", handler{}, "endpoint"),
 		),
 	)
