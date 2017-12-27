@@ -95,10 +95,11 @@ func TestRouterHandle(test *testing.T) {
 func TestRouterHandleDefaultRoute(test *testing.T) {
 	instance := NewRouter(
 		"/api", "api",
-		nil,
+		NewRoute("", &CodeHandler{http.StatusNotImplemented}, "default"),
+		NewRouter("/v1", "v1", nil),
 		NewRouter(
-			"/v1", "v1",
-			NewRoute("", &CodeHandler{http.StatusNotImplemented}, "default"),
+			"/v2", "v2",
+			NewRoute("", &CodeHandler{http.StatusNotAcceptable}, "default"),
 		),
 	)
 
@@ -107,9 +108,9 @@ func TestRouterHandleDefaultRoute(test *testing.T) {
 
 	instance.ServeHTTP(mock, request)
 
-	if status := mock.Code; status != http.StatusNotFound {
+	if status := mock.Code; status != http.StatusNotImplemented {
 		test.Errorf("Incorrect status code!\n")
-		test.Errorf("Expected: %d", http.StatusNotFound)
+		test.Errorf("Expected: %d", http.StatusNotImplemented)
 		test.Errorf("Actual: %d", status)
 		return
 	}
@@ -122,6 +123,18 @@ func TestRouterHandleDefaultRoute(test *testing.T) {
 	if status := mock.Code; status != http.StatusNotImplemented {
 		test.Errorf("Incorrect status code!\n")
 		test.Errorf("Expected: %d", http.StatusNotImplemented)
+		test.Errorf("Actual: %d", status)
+		return
+	}
+
+	request, _ = http.NewRequest("GET", "/api/v2/", nil)
+	mock = httptest.NewRecorder()
+
+	instance.ServeHTTP(mock, request)
+
+	if status := mock.Code; status != http.StatusNotAcceptable {
+		test.Errorf("Incorrect status code!\n")
+		test.Errorf("Expected: %d", http.StatusNotAcceptable)
 		test.Errorf("Actual: %d", status)
 		return
 	}
