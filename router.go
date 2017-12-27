@@ -7,15 +7,26 @@ import (
 	"strings"
 )
 
+// DefaultNotFoundHandler is a static instance of NotFoundHandler.
+var DefaultNotFoundHandler *NotFoundHandler
+
 // Key is a type for context keys.
 type Key string
+
+// NotFoundHandler is a handler which returns 404 Not Found.
+type NotFoundHandler struct{}
+
+func (handler *NotFoundHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	response.WriteHeader(http.StatusNotFound)
+}
 
 // Router is a group of resolvers.
 // Router implements Resolver and http.Handler interface.
 type Router struct {
-	prefix    string
-	namespace string
-	resolvers map[string]Resolver
+	prefix       string
+	namespace    string
+	defaultRoute *Route
+	resolvers    map[string]Resolver
 }
 
 // Name returns router name (namespace).
@@ -53,7 +64,7 @@ func (router *Router) Resolve(path string) (*Route, bool) {
 		return nil, false
 	}
 
-	path = fmt.Sprintf("/%v", strings.TrimPrefix(path, fmt.Sprintf("%v/", router.prefix)))
+	path = fmt.Sprintf("/%v", strings.Trim(strings.TrimPrefix(path, router.prefix), "/"))
 
 	for _, route := range router.resolvers {
 		if route, matched := route.Resolve(path); matched {
@@ -61,7 +72,7 @@ func (router *Router) Resolve(path string) (*Route, bool) {
 		}
 	}
 
-	return nil, false
+	return router.defaultRoute, true
 }
 
 // Handle looking for route by path and delegates request to handler.
@@ -81,14 +92,19 @@ func (router *Router) Handle(response http.ResponseWriter, request *http.Request
 }
 
 // NewRouter creates new Router instance.
-func NewRouter(prefix string, namespace string, resolvers ...Resolver) *Router {
+func NewRouter(prefix string, namespace string, defaultRoute *Route, resolvers ...Resolver) *Router {
 	router := &Router{}
 	router.prefix = fmt.Sprintf("/%v", strings.Trim(prefix, "/"))
 	router.namespace = namespace
+	router.defaultRoute = defaultRoute
 	router.resolvers = make(map[string]Resolver)
 
 	for _, resolver := range resolvers {
 		router.Add(resolver)
+	}
+
+	if router.defaultRoute == nil {
+		router.defaultRoute = NewRoute("", DefaultNotFoundHandler, "")
 	}
 
 	return router
