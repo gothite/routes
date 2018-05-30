@@ -17,7 +17,7 @@ func (handler *CodeHandler) ServeHTTP(response http.ResponseWriter, request *htt
 }
 
 func TestRouterName(test *testing.T) {
-	instance := NewRouter("/", "namespace", nil, NewRoute("/", Handler{"path"}, "test"))
+	instance := NewRouter("/", "namespace", nil, NewRoute("/", &Handler{"path"}, "test"))
 
 	if want := instance.Name(); instance.namespace != want {
 		test.Errorf("wrong name: got %v, want %v", instance.namespace, want)
@@ -29,15 +29,16 @@ func TestRouterResolve(test *testing.T) {
 	var pattern = "(?P<path>path)"
 	var prefix = "prefix"
 	var name = "test"
-	var instance = NewRouter(prefix, "test", nil, NewRoute(pattern, Handler{"path"}, name))
+	var instance = NewRouter(prefix, "test", nil, NewRoute(pattern, &Handler{"path"}, name))
+	var path = strings.Join([]string{"", prefix, "path"}, "/")
 
-	if match, matched := instance.resolve([]string{prefix, "path"}); !matched {
+	if match, matched := instance.Resolve(path); !matched {
 		test.Fatalf("route not matched")
-	} else if match.route != instance.resolvers[name] {
-		test.Fatalf("Resolve returned wrong route object: %v", match.route)
+	} else if match.Route != instance.routes[name] {
+		test.Fatalf("Resolve returned wrong route object: %v", match.Route)
 	}
 
-	if _, matched := instance.resolve([]string{"wrong"}); matched {
+	if _, matched := instance.Resolve("/wrong"); matched {
 		test.Fatalf("route matched by wrong path")
 	}
 }
@@ -49,7 +50,7 @@ func TestRouterHandle(test *testing.T) {
 	path := strings.Join([]string{"", prefix, option}, "/")
 	request, _ := http.NewRequest("GET", path, nil)
 
-	instance := NewRouter(prefix, "test", nil, NewRoute(pattern, Handler{"path"}, "test"))
+	instance := NewRouter(prefix, "test", nil, NewRoute(pattern, &Handler{"path"}, "test"))
 
 	mock := httptest.NewRecorder()
 
@@ -134,7 +135,7 @@ func TestRouterReverse(test *testing.T) {
 	namespace := "root"
 	option := "path"
 
-	instance := NewRouter(prefix, namespace, nil, NewRoute(pattern, Handler{"path"}, name))
+	instance := NewRouter(prefix, namespace, nil, NewRoute(pattern, &Handler{"path"}, name))
 
 	if path, err := instance.Reverse(name, map[string]string{"path": option}); err != nil {
 		test.Fatal(err)
@@ -161,7 +162,7 @@ func TestRouterNamespaces(test *testing.T) {
 		NewRouter(
 			"/v1", "v1",
 			nil, // default route
-			NewRoute(`(?P<path>\w+)/(?P<id>\d+)`, Handler{"id"}, "endpoint"),
+			NewRoute(`(?P<path>\w+)/(?P<id>\d+)`, &Handler{"id"}, "endpoint"),
 		),
 	)
 
@@ -189,7 +190,7 @@ func BenchmarkRouter(benchmark *testing.B) {
 		NewRouter(
 			"/v1", "v1",
 			nil, // default route
-			NewRoute(`(?P<path>\w+)/(?P<id>\d+)`, Handler{"id"}, "endpoint"),
+			NewRoute(`(?P<path>\w+)/(?P<id>\d+)`, &Handler{"id"}, "endpoint"),
 		),
 	)
 

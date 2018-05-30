@@ -13,10 +13,10 @@ type Key string
 // Router is a group of resolvers.
 // Router implements Resolver and http.Handler interface.
 type Router struct {
-	prefix       string
-	namespace    string
-	defaultRoute *Route
-	resolvers    map[string]Resolver
+	prefix    string
+	namespace string
+	defaults  *defaults
+	routes    map[string]*Route
 }
 
 // Name returns router name (namespace).
@@ -32,45 +32,38 @@ func (router *Router) ServeHTTP(response http.ResponseWriter, request *http.Requ
 // Add adds new resolver to router.
 // It's may replace existing resolver with same name.
 func (router *Router) Add(resolver Resolver) {
-	router.resolvers[resolver.Name()] = resolver
+	for _, route := range resolver.Routes() {
+		var path = fmt.Sprintf("%s%s", router.prefix, route.pattern.String())
+
+		route = NewRoute(path, route.handler, route.name)
+
+		router.routes[route.name] = route
+	}
 }
 
 // Reverse returns URL path from matched resolver.
 func (router *Router) Reverse(name string, parameters map[string]string) (path string, err error) {
-	return router.reverse(name, parameters)
-}
-
-func (router *Router) reverse(name string, parameters map[string]string) (path string, err error) {
-	var parts = strings.Split(name, ":")
-
-	if resolver, exists := router.resolvers[parts[0]]; exists {
-		path, err := resolver.reverse(strings.Join(parts[1:], ":"), parameters)
-
-		if err != nil {
+	if route, exists := router.routes[name]; exists {
+		if path, err := route.reverse(parameters); err != nil {
 			return "", err
+		} else {
+			return path, nil
 		}
-
-		path = fmt.Sprintf("/%v/%v", router.prefix, strings.TrimPrefix(path, "/"))
-		return strings.Replace(path, "//", "/", 1), nil
 	}
 
-	return "", fmt.Errorf("Namespace '%s' not found", parts[0])
+	return "", fmt.Errorf("Route named '%s' not found", name)
 }
 
 // Resolve looking route by path.
-func (router *Router) resolve(parts []string) (*Match, bool) {
-	if len(parts) < 2 || parts[0] != router.prefix {
-		return nil, false
-	}
-
-	for _, route := range router.resolvers {
-		if match, matched := route.resolve(parts[1:]); matched {
+func (router *Router) Resolve(path string) (*Match, bool) {
+	for _, route := range router.routes {
+		if match, matched := route.Resolve(path); matched {
 			return match, matched
 		}
 	}
 
-	if router.defaultRoute != nil {
-		return &Match{route: router.defaultRoute}, true
+	if route, found := router.defaults.get(path); found {
+		return &Match{Path: path, Route: route}, true
 	}
 
 	return nil, false
@@ -79,31 +72,47 @@ func (router *Router) resolve(parts []string) (*Match, bool) {
 // Handle looking for route by path and delegates request to handler.
 // If route not found, Handle will write header http.StatusNotFound.
 func (router *Router) Handle(response http.ResponseWriter, request *http.Request) {
-	var parts = strings.Split(request.URL.Path, "/")
-
-	if match, found := router.resolve(parts[1:]); found {
-		var ctx = request.Context()
-
-		for key, value := range match.parameters {
-			ctx = context.WithValue(ctx, Key(key), value)
-		}
-
-		match.route.handler.ServeHTTP(response, request.WithContext(ctx))
+	if match, found := router.Resolve(request.URL.Path); found {
+		var ctx = context.WithValue(request.Context(), Key("match"), match)
+		match.Route.handler.ServeHTTP(response, request.WithContext(ctx))
 	} else {
 		response.WriteHeader(http.StatusNotFound)
 	}
 }
 
+func (router *Router) Routes() []*Route {
+	var routes = make([]*Route, 0, len(router.routes))
+
+	for _, route := range router.routes {
+		route.name = fmt.Sprintf("%s:%s", router.namespace, route.name)
+		routes = append(routes, route)
+	}
+
+	return routes
+}
+
+func (router *Router) Defaults() *defaults {
+	return router.defaults
+}
+
 // NewRouter creates new Router instance.
 func NewRouter(prefix string, namespace string, defaultRoute *Route, resolvers ...Resolver) *Router {
 	router := &Router{}
-	router.prefix = strings.Trim(prefix, "/")
+	router.prefix = fmt.Sprintf("/%s", strings.Trim(prefix, "/"))
 	router.namespace = namespace
-	router.defaultRoute = defaultRoute
-	router.resolvers = make(map[string]Resolver, len(resolvers))
+	router.routes = make(map[string]*Route)
+	router.defaults = &defaults{
+		prefixes: make([]string, 0, len(resolvers)),
+		routes:   make(map[string]*Route, len(resolvers)),
+	}
+
+	if defaultRoute != nil {
+		router.defaults.add(prefix, defaultRoute)
+	}
 
 	for _, resolver := range resolvers {
 		router.Add(resolver)
+		router.defaults.merge(prefix, resolver.Defaults())
 	}
 
 	return router

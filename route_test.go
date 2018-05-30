@@ -2,7 +2,6 @@ package routes
 
 import (
 	"net/http"
-	"strings"
 	"testing"
 )
 
@@ -10,37 +9,26 @@ type Handler struct {
 	option string
 }
 
-func (handler Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	response.Write([]byte(request.Context().Value(Key(handler.option)).(string)))
+func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	var match = request.Context().Value(Key("match")).(*Match)
+
+	response.Write([]byte(match.Get(handler.option)))
 }
 
 func TestRouteResolve(test *testing.T) {
-	var pattern = `/(?P<id>\d+)`
-	var path = "11"
-	instance := NewRoute(pattern, Handler{"path"}, "test")
+	var pattern = `(?P<id>\d+)`
+	var path = "/11"
+	instance := NewRoute(pattern, &Handler{"path"}, "test")
 
-	if match, matched := instance.resolve(strings.Split(path, "/")); !matched {
+	if match, matched := instance.Resolve(path); !matched {
 		test.Fatalf("route not matched")
-	} else if match.route != instance {
-		test.Errorf("Resolve returned wrong route object: %v", match.route)
+	} else if match.Route != instance {
+		test.Errorf("Resolve returned wrong route object: %v", match.Route)
 		return
 	}
 
-	if _, matched := instance.resolve([]string{"wrong"}); matched {
+	if _, matched := instance.Resolve("wrong"); matched {
 		test.Fatalf("route matched by wrong path")
-	}
-}
-
-func TestRouteGetGroups(test *testing.T) {
-	pattern := "/(?P<path>.*)"
-	path := "path"
-	route := NewRoute(pattern, Handler{"path"}, "test")
-
-	matches := route.GetGroups([]string{path})
-
-	if want := strings.TrimPrefix(path, "/"); matches["path"] != want {
-		test.Errorf("route matched wrong: got %v, want %v", matches["path"], want)
-		return
 	}
 }
 
@@ -51,17 +39,17 @@ func TestNewRoutePositionalGroups(test *testing.T) {
 		}
 	}()
 
-	NewRoute("(.*)", Handler{"path"}, "test")
+	NewRoute("(.*)", &Handler{"path"}, "test")
 }
 
 func TestRouteReverse(test *testing.T) {
 	pattern := "/prefix/(?P<path>.*)"
 	name := "test"
-	route := NewRoute(pattern, Handler{"path"}, name)
+	route := NewRoute(pattern, &Handler{"path"}, name)
 
-	if path, err := route.reverse(name, map[string]string{"path": "test"}); err != nil {
+	if path, err := route.reverse(map[string]string{"path": "test"}); err != nil {
 		test.Fatal(err)
-	} else if want := "prefix/test"; path != want {
+	} else if want := "/prefix/test"; path != want {
 		test.Fatalf("route reversed wrong: got %v, want %v", path, want)
 	}
 }

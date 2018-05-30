@@ -8,9 +8,8 @@ type Resolver interface {
 	Name() string
 
 	// Resolve searches and returns route by passed URL path splitted by slash.
-	resolve([]string) (*Match, bool)
+	Resolve(string) (*Match, bool)
 
-	// Reverse makes URL path by resolver name and URL parameters (regular expression groups).
-	// Name may be nested like "route", "router:route", "api:v1:endpoint".
-	reverse(string, map[string]string) (string, error)
+	Routes() []*Route
+	Defaults() *defaults
 }

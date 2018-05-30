@@ -1,1 +1,4 @@
 coverage.out
+mem.out
+cpu.out
+routes.test
