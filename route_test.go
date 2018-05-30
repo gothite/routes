@@ -15,39 +15,28 @@ func (handler Handler) ServeHTTP(response http.ResponseWriter, request *http.Req
 }
 
 func TestRouteResolve(test *testing.T) {
-	pattern := "(?P<path>.*)"
-	path := "/path"
+	var pattern = `/(?P<id>\d+)`
+	var path = "11"
 	instance := NewRoute(pattern, Handler{"path"}, "test")
 
-	if want := strings.Join([]string{"/", pattern}, ""); instance.pattern.String() != want {
-		test.Errorf("wrong prepared pattern: got %v, want %v", instance.pattern, want)
+	if match, matched := instance.resolve(strings.Split(path, "/")); !matched {
+		test.Fatalf("route not matched")
+	} else if match.route != instance {
+		test.Errorf("Resolve returned wrong route object: %v", match.route)
 		return
 	}
 
-	route, matched := instance.Resolve(path)
-
-	if !matched {
-		test.Errorf("route not matched")
-		return
-	}
-
-	if route != instance {
-		test.Errorf("Resolve returned wrong route object: %v", route)
-		return
-	}
-
-	if _, matched = instance.Resolve("wrong"); matched {
-		test.Errorf("route matched by wrong path")
-		return
+	if _, matched := instance.resolve([]string{"wrong"}); matched {
+		test.Fatalf("route matched by wrong path")
 	}
 }
 
 func TestRouteGetGroups(test *testing.T) {
-	pattern := "(?P<path>.*)"
-	path := "/path"
+	pattern := "/(?P<path>.*)"
+	path := "path"
 	route := NewRoute(pattern, Handler{"path"}, "test")
 
-	matches := route.GetGroups(path)
+	matches := route.GetGroups([]string{path})
 
 	if want := strings.TrimPrefix(path, "/"); matches["path"] != want {
 		test.Errorf("route matched wrong: got %v, want %v", matches["path"], want)
@@ -70,15 +59,9 @@ func TestRouteReverse(test *testing.T) {
 	name := "test"
 	route := NewRoute(pattern, Handler{"path"}, name)
 
-	path, found := route.Reverse(name, map[string]string{"path": "test"})
-
-	if !found {
-		test.Error("route not reversed")
-		return
-	}
-
-	if want := "/prefix/test"; path != want {
-		test.Errorf("route reversed wrong: got %v, want %v", path, want)
-		return
+	if path, err := route.reverse(name, map[string]string{"path": "test"}); err != nil {
+		test.Fatal(err)
+	} else if want := "prefix/test"; path != want {
+		test.Fatalf("route reversed wrong: got %v, want %v", path, want)
 	}
 }

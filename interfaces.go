@@ -7,10 +7,10 @@ type Resolver interface {
 	// Name uses for resolver identification.
 	Name() string
 
-	// Resolve searches and returns route by passed URL path.
-	Resolve(string) (*Route, bool)
+	// Resolve searches and returns route by passed URL path splitted by slash.
+	resolve([]string) (*Match, bool)
 
 	// Reverse makes URL path by resolver name and URL parameters (regular expression groups).
 	// Name may be nested like "route", "router:route", "api:v1:endpoint".
-	Reverse(string, map[string]string) (string, bool)
+	reverse(string, map[string]string) (string, error)
 }

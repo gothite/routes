@@ -8,13 +8,33 @@ import (
 	"strings"
 )
 
+type Node struct {
+	path    string
+	capture *syntax.Regexp
+	pattern *regexp.Regexp
+	index   int
+}
+
+func (node *Node) Match(path string) bool {
+	if node.pattern != nil {
+		return node.pattern.MatchString(path)
+	}
+
+	return node.path == path
+}
+
+type Match struct {
+	route      *Route
+	parameters map[string]string
+}
+
 // Route represents URL pattern -> handler relation.
 // Route implements Resolver interface.
 type Route struct {
-	pattern *regexp.Regexp
-	re      *syntax.Regexp
-	handler http.Handler
-	name    string
+	nodes    []*Node
+	captures []*Node
+	handler  http.Handler
+	name     string
 }
 
 // Name returns route name.
@@ -23,51 +43,91 @@ func (route *Route) Name() string {
 }
 
 // Reverse makes URL path using parameters as values for groups of regular expression.
-func (route *Route) Reverse(name string, parameters map[string]string) (path string, found bool) {
-	path = route.re.String()
+func (route *Route) reverse(name string, parameters map[string]string) (path string, err error) {
+	var parts = make([]string, 0, len(route.nodes))
 
-	for _, sub := range route.re.Sub {
-		if value, exists := parameters[sub.Name]; exists {
-			path = strings.Replace(path, sub.String(), value, -1)
+	for _, node := range route.nodes {
+		var part = node.path
+
+		if node.capture != nil {
+			if value, ok := parameters[node.capture.Name]; ok {
+				part = value
+			} else {
+				return "", fmt.Errorf("No value for parameter '%s'", node.capture.Name)
+			}
 		}
+
+		parts = append(parts, part)
 	}
 
-	return path, true
+	return strings.Join(parts, "/"), nil
 }
 
 // Resolve checks match URL path with pattern.
-func (route *Route) Resolve(path string) (*Route, bool) {
-	if route.pattern.MatchString(path) {
-		return route, true
+func (route *Route) resolve(parts []string) (*Match, bool) {
+	if len(parts) != len(route.nodes) {
+		return nil, false
 	}
 
-	return nil, false
+	for i, node := range route.nodes {
+		if !node.Match(parts[i]) {
+			return nil, false
+		}
+	}
+
+	return &Match{route: route, parameters: route.GetGroups(parts)}, true
 }
 
 // GetGroups returns map of matched regular expression groups.
-func (route *Route) GetGroups(path string) map[string]string {
-	matches := route.pattern.FindStringSubmatch(path)[1:]
-	matched := make(map[string]string)
+func (route *Route) GetGroups(parts []string) map[string]string {
+	var groups = make(map[string]string, len(route.captures))
 
-	for i, name := range route.pattern.SubexpNames()[1:] {
-		matched[name] = matches[i]
+	for _, node := range route.captures {
+		groups[node.capture.Name] = parts[node.index]
 	}
 
-	return matched
+	return groups
+}
+
+func (route *Route) tree() map[string]*Route {
+	return map[string]*Route{route.name: route}
 }
 
 // NewRoute creates new Route instance.
 func NewRoute(pattern string, handler http.Handler, name string) *Route {
-	pattern = fmt.Sprintf("/%v", strings.TrimPrefix(pattern, "/"))
-	re := regexp.MustCompile(pattern)
+	var ast, _ = syntax.Parse(pattern, syntax.Perl)
+	var groups = make(map[string]*syntax.Regexp, len(ast.Sub)+1)
 
-	for _, name := range re.SubexpNames()[1:] {
-		if len(name) == 0 {
-			panic("All groups in pattern should be named")
+	pattern = strings.TrimPrefix(ast.String(), "/")
+
+	for _, group := range append(ast.Sub, ast) {
+		if group.Op == syntax.OpCapture {
+			if group.Name == "" {
+				panic("All groups in pattern should be named")
+			}
+
+			groups[group.Name] = group
+			pattern = strings.Replace(pattern, group.String(), fmt.Sprintf(":%s", group.Name), -1)
 		}
 	}
 
-	ast, _ := syntax.Parse(re.String(), syntax.Perl)
+	var parts = strings.Split(pattern, "/")
+	var nodes = make([]*Node, 0, len(parts))
+	var captures = make([]*Node, 0, len(groups))
 
-	return &Route{re, ast, handler, name}
+	for i, part := range parts {
+		var node = &Node{path: part, index: i}
+
+		if strings.HasPrefix(part, ":") {
+			if capture, ok := groups[strings.TrimPrefix(part, ":")]; ok {
+				node.capture = capture
+				node.pattern = regexp.MustCompile(capture.String())
+				captures = append(captures, node)
+			}
+		}
+
+		nodes = append(nodes, node)
+	}
+
+	return &Route{nodes, captures, handler, name}
 }

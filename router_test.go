@@ -26,32 +26,19 @@ func TestRouterName(test *testing.T) {
 }
 
 func TestRouterResolve(test *testing.T) {
-	pattern := "(?P<path>path)"
-	prefix := "prefix"
-	name := "test"
-	path := strings.Join([]string{"", prefix, "path"}, "/")
-	instance := NewRouter(prefix, "test", nil, NewRoute(pattern, Handler{"path"}, name))
+	var pattern = "(?P<path>path)"
+	var prefix = "prefix"
+	var name = "test"
+	var instance = NewRouter(prefix, "test", nil, NewRoute(pattern, Handler{"path"}, name))
 
-	if want := strings.Join([]string{"/", prefix}, ""); instance.prefix != want {
-		test.Errorf("wrong prepared pattern: got %v, want %v", instance.prefix, want)
-		return
+	if match, matched := instance.resolve([]string{prefix, "path"}); !matched {
+		test.Fatalf("route not matched")
+	} else if match.route != instance.resolvers[name] {
+		test.Fatalf("Resolve returned wrong route object: %v", match.route)
 	}
 
-	route, matched := instance.Resolve(path)
-
-	if !matched {
-		test.Errorf("route not matched")
-		return
-	}
-
-	if route != instance.resolvers[name] {
-		test.Errorf("Resolve returned wrong route object: %v", route)
-		return
-	}
-
-	if _, matched = instance.Resolve("wrong"); matched {
-		test.Errorf("route matched by wrong path")
-		return
+	if _, matched := instance.resolve([]string{"wrong"}); matched {
+		test.Fatalf("route matched by wrong path")
 	}
 }
 
@@ -149,29 +136,64 @@ func TestRouterReverse(test *testing.T) {
 
 	instance := NewRouter(prefix, namespace, nil, NewRoute(pattern, Handler{"path"}, name))
 
-	path, found := instance.Reverse(name, map[string]string{"path": option})
-
-	if !found {
-		test.Error("route not reversed")
-		return
-	}
-
-	if want := fmt.Sprintf("/%v/%v", prefix, option); path != want {
+	if path, err := instance.Reverse(name, map[string]string{"path": option}); err != nil {
+		test.Fatal(err)
+	} else if want := fmt.Sprintf("/%v/%v", prefix, option); path != want {
 		test.Errorf("wrong prepared pattern: got %v, want %v", instance.prefix, want)
 		return
 	}
 
-	_, found = instance.Reverse("wrong", map[string]string{})
+	if _, err := instance.Reverse("wrong", map[string]string{}); err == nil {
+		test.Fatal("route reversed wrong")
+	}
 
-	if found {
-		test.Error("route reversed wrong")
+	if _, err := instance.Reverse(fmt.Sprintf("%v:%v", namespace, "wrong"), map[string]string{}); err == nil {
+		test.Fatal("route reversed wrong")
+	}
+}
+
+func TestRouterNamespaces(test *testing.T) {
+	var request, _ = http.NewRequest("GET", "/api/v1/user/4545786125", nil)
+	var mock = httptest.NewRecorder()
+	var router = NewRouter(
+		"/api", "api",
+		nil, // default route
+		NewRouter(
+			"/v1", "v1",
+			nil, // default route
+			NewRoute(`(?P<path>\w+)/(?P<id>\d+)`, Handler{"id"}, "endpoint"),
+		),
+	)
+
+	router.ServeHTTP(mock, request)
+
+	if status := mock.Code; status != http.StatusOK {
+		test.Errorf("handler returned wrong status code: got %v, want %v",
+			status, http.StatusOK)
 		return
 	}
 
-	_, found = instance.Reverse(fmt.Sprintf("%v:%v", namespace, "wrong"), map[string]string{})
-
-	if found {
-		test.Error("route reversed wrong")
+	if mock.Body.String() != "4545786125" {
+		test.Errorf("handler returned unexpected body: got %v, want %v",
+			mock.Body.String(), "4545786125")
 		return
+	}
+}
+
+func BenchmarkRouter(benchmark *testing.B) {
+	var request, _ = http.NewRequest("GET", "/api/v1/user/4545786125", nil)
+	var mock = httptest.NewRecorder()
+	var router = NewRouter(
+		"/api", "api",
+		nil, // default route
+		NewRouter(
+			"/v1", "v1",
+			nil, // default route
+			NewRoute(`(?P<path>\w+)/(?P<id>\d+)`, Handler{"id"}, "endpoint"),
+		),
+	)
+
+	for i := 0; i < benchmark.N; i++ {
+		router.ServeHTTP(mock, request)
 	}
 }
