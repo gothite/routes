@@ -5,6 +5,10 @@
 
 `go get github.com/gothite/routes`
 
+or using [dep](https://github.com/golang/dep):
+
+`dep ensure -add github.com/gothite/routes`
+
 
 ## Usage ##
 ```go
