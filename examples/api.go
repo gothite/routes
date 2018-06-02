@@ -10,8 +10,8 @@ import (
 type handler struct{}
 
 func (h handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	path := request.Context().Value(routes.Key("path")).(string)
-	response.Write([]byte(path))
+	var parameters = request.Context().Value(routes.Key).([]string)
+	response.Write([]byte(parameters[0]))
 }
 
 func main() {
