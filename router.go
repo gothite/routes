@@ -1,119 +1,208 @@
 package routes
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 )
 
-// Key is a type for context keys.
+const (
+	ParameterRune       = ':'
+	GreedyParameterRune = '*'
+)
+
 type Key string
 
-// Router is a group of resolvers.
-// Router implements Resolver and http.Handler interface.
 type Router struct {
-	prefix    string
-	namespace string
-	defaults  *defaults
-	routes    map[string]*Route
+	NotFoundHandler http.Handler
+
+	nodes         map[string]*Router
+	names         map[string]string
+	parameterized bool
+	greedy        bool
+	handler       http.Handler
+	parameters    []string
+	name          string
+	pattern       string
 }
 
-// Name returns router name (namespace).
-func (router *Router) Name() string {
-	return router.namespace
+func (router *Router) IsEnd() bool {
+	return len(router.nodes) == 0
 }
 
-// ServeHTTP impelements http.Handler.ServeHTTP.
-func (router *Router) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	router.Handle(response, request)
-}
+func (router *Router) update(path []string, node *Router, name string) {
+	var parameterized bool
+	var greedy bool
 
-// Add adds new resolver to router.
-// It's may replace existing resolver with same name.
-func (router *Router) Add(resolver Resolver) {
-	for _, route := range resolver.Routes() {
-		var path = fmt.Sprintf("%s%s", router.prefix, route.pattern.String())
-
-		route = NewRoute(path, route.handler, route.name)
-
-		router.routes[route.name] = route
+	if strings.HasPrefix(path[0], string(ParameterRune)) {
+		parameterized = true
+		router.parameters = append(router.parameters, strings.TrimPrefix(path[0], ":"))
+		path[0] = ""
+	} else if strings.HasPrefix(path[0], string(GreedyParameterRune)) {
+		router.greedy = true
+		router.parameters = append(router.parameters, strings.TrimPrefix(path[0], "*"))
+		router.handler = node.handler
+		return
 	}
-}
 
-// Reverse returns URL path from matched resolver.
-func (router *Router) Reverse(name string, parameters map[string]string) (path string, err error) {
-	if route, exists := router.routes[name]; exists {
-		if path, err := route.reverse(parameters); err != nil {
-			return "", err
+	if len(path) > 0 {
+		var tree *Router
+		var ok bool
+
+		if len(path) > 1 {
+			if tree, ok = router.nodes[path[0]]; !ok {
+				tree = New()
+				tree.parameterized = parameterized
+				tree.greedy = greedy
+				tree.parameters = router.parameters
+
+				router.nodes[path[0]] = tree
+				router.names[name] = tree.pattern
+			}
+
+			tree.update(path[1:], node, name)
 		} else {
-			return path, nil
+			node.parameterized = parameterized
+			node.greedy = greedy
+			node.parameters = append(router.parameters, node.parameters...)
+			router.nodes[path[0]] = node
+			router.names[name] = node.pattern
+
+			tree = node
+		}
+
+		for name, pattern := range tree.names {
+			if tree.name != "" {
+				name = fmt.Sprintf("%s:%s", tree.name, name)
+			}
+
+			if tree.pattern != "" {
+				pattern = strings.TrimPrefix(pattern, "/")
+				pattern = fmt.Sprintf("%s/%s", tree.pattern, pattern)
+			}
+
+			router.names[name] = pattern
+		}
+	}
+}
+
+func (router *Router) Resolve(path string) (http.Handler, []string) {
+	var parameters = make([]string, 0)
+	var node = router
+
+	if path[0] == '/' {
+		path = path[1:]
+	}
+
+	for path != "" {
+		var index = strings.IndexRune(path, '/')
+		var part string
+
+		if index == -1 {
+			part = path
+			path = ""
+		} else if node.greedy {
+			parameters = append(parameters, path)
+			return node.handler, parameters
+		} else {
+			part = path[:index]
+			path = path[index+1:]
+		}
+
+		if nextNode, ok := node.nodes[part]; ok {
+			node = nextNode
+			continue
+		} else if nextNode, ok := node.nodes[""]; ok && nextNode.parameterized {
+			node = nextNode
+			parameters = append(parameters, part)
+			continue
+		} else if node.NotFoundHandler != nil {
+			return node.NotFoundHandler, nil
+		} else {
+			return nil, nil
 		}
 	}
 
-	return "", fmt.Errorf("Route named '%s' not found", name)
+	if node.handler != nil && node.IsEnd() {
+		return node.handler, parameters
+	}
+
+	return nil, nil
 }
 
-// Resolve looking route by path.
-func (router *Router) Resolve(path string) (*Match, bool) {
-	for _, route := range router.routes {
-		if match, matched := route.Resolve(path); matched {
-			return match, matched
+func (router *Router) Add(path string, handler http.Handler, name string) {
+	var node = New()
+	node.name = name
+	node.handler = handler
+	node.pattern = fmt.Sprintf("/%s", strings.Trim(path, "/"))
+
+	router.update(strings.Split(strings.Trim(path, "/"), "/"), node, name)
+}
+
+func (router *Router) AddRouter(prefix string, node *Router, namespace string) {
+	node.name = namespace
+	node.pattern = fmt.Sprintf("/%s", strings.Trim(prefix, "/"))
+
+	router.update(strings.Split(strings.Trim(prefix, "/"), "/"), node, namespace)
+}
+
+func (router *Router) Reverse(name string, parameters ...string) (string, error) {
+	var buffer bytes.Buffer
+
+	if path, ok := router.names[name]; !ok {
+		return "", errors.New("Name not found!")
+	} else {
+		if path[0] == '/' {
+			path = path[1:]
+		}
+
+		for path != "" {
+			buffer.WriteRune('/')
+
+			var index = strings.IndexRune(path, '/')
+			var part string
+
+			if index == -1 {
+				part = path
+				path = ""
+			} else {
+				part = path[:index]
+				path = path[index+1:]
+			}
+
+			if part[0] == ParameterRune || part[0] == GreedyParameterRune {
+				buffer.WriteString(parameters[0])
+
+				if part[0] == GreedyParameterRune {
+					break
+				}
+
+				parameters = parameters[1:]
+			} else {
+				buffer.WriteString(part)
+			}
 		}
 	}
 
-	if route, found := router.defaults.get(path); found {
-		return &Match{Path: path, Route: route}, true
-	}
-
-	return nil, false
+	return buffer.String(), nil
 }
 
-// Handle looking for route by path and delegates request to handler.
-// If route not found, Handle will write header http.StatusNotFound.
-func (router *Router) Handle(response http.ResponseWriter, request *http.Request) {
-	if match, found := router.Resolve(request.URL.Path); found {
-		var ctx = context.WithValue(request.Context(), Key("match"), match)
-		match.Route.handler.ServeHTTP(response, request.WithContext(ctx))
+func (router *Router) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	if handler, parameters := router.Resolve(request.URL.Path); handler != nil {
+		var ctx = context.WithValue(request.Context(), Key("parameters"), parameters)
+
+		handler.ServeHTTP(response, request.WithContext(ctx))
 	} else {
 		response.WriteHeader(http.StatusNotFound)
 	}
 }
 
-func (router *Router) Routes() []*Route {
-	var routes = make([]*Route, 0, len(router.routes))
-
-	for _, route := range router.routes {
-		route.name = fmt.Sprintf("%s:%s", router.namespace, route.name)
-		routes = append(routes, route)
+func New() *Router {
+	return &Router{
+		nodes: make(map[string]*Router),
+		names: make(map[string]string),
 	}
-
-	return routes
-}
-
-func (router *Router) Defaults() *defaults {
-	return router.defaults
-}
-
-// NewRouter creates new Router instance.
-func NewRouter(prefix string, namespace string, defaultRoute *Route, resolvers ...Resolver) *Router {
-	router := &Router{}
-	router.prefix = fmt.Sprintf("/%s", strings.Trim(prefix, "/"))
-	router.namespace = namespace
-	router.routes = make(map[string]*Route)
-	router.defaults = &defaults{
-		prefixes: make([]string, 0, len(resolvers)),
-		routes:   make(map[string]*Route, len(resolvers)),
-	}
-
-	if defaultRoute != nil {
-		router.defaults.add(prefix, defaultRoute)
-	}
-
-	for _, resolver := range resolvers {
-		router.Add(resolver)
-		router.defaults.merge(prefix, resolver.Defaults())
-	}
-
-	return router
 }
