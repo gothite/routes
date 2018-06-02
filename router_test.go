@@ -1,177 +1,134 @@
 package routes
 
 import (
-	"fmt"
 	"net/http"
-	"net/http/httptest"
-	"strings"
+	"reflect"
 	"testing"
 )
 
-type CodeHandler struct {
-	code int
+type Handler struct{}
+
+func (handler *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {}
+
+type Result struct {
+	found      bool
+	parameters []string
 }
 
-func (handler *CodeHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	response.WriteHeader(handler.code)
-}
-
-func TestRouterName(test *testing.T) {
-	instance := NewRouter("/", "namespace", nil, NewRoute("/", Handler{"path"}, "test"))
-
-	if want := instance.Name(); instance.namespace != want {
-		test.Errorf("wrong name: got %v, want %v", instance.namespace, want)
-		return
-	}
+func (result *Result) Check(handler http.Handler, parameters []string) bool {
+	return (handler != nil) == result.found && reflect.DeepEqual(result.parameters, parameters)
 }
 
 func TestRouterResolve(test *testing.T) {
-	pattern := "(?P<path>path)"
-	prefix := "prefix"
-	name := "test"
-	path := strings.Join([]string{"", prefix, "path"}, "/")
-	instance := NewRouter(prefix, "test", nil, NewRoute(pattern, Handler{"path"}, name))
-
-	if want := strings.Join([]string{"/", prefix}, ""); instance.prefix != want {
-		test.Errorf("wrong prepared pattern: got %v, want %v", instance.prefix, want)
-		return
+	var router = New()
+	var paths = []string{
+		":user/activity/:activity",
+		"api/v1/user/:user/",
+		"api/v1/:user",
+		"static/*path",
+	}
+	var tests = map[string]Result{
+		"/1/activity/2":          Result{true, []string{"1", "2"}},
+		"api/v1/user":            Result{false, nil},
+		"/api/v1/user/1":         Result{true, []string{"1"}},
+		"api/v2/user":            Result{false, nil},
+		"/static/path/to/static": Result{true, []string{"path/to/static"}},
 	}
 
-	route, matched := instance.Resolve(path)
-
-	if !matched {
-		test.Errorf("route not matched")
-		return
+	for _, path := range paths {
+		router.Add(path, &Handler{}, "")
 	}
 
-	if route != instance.resolvers[name] {
-		test.Errorf("Resolve returned wrong route object: %v", route)
-		return
-	}
-
-	if _, matched = instance.Resolve("wrong"); matched {
-		test.Errorf("route matched by wrong path")
-		return
-	}
-}
-
-func TestRouterHandle(test *testing.T) {
-	pattern := "(?P<path>path)"
-	prefix := "prefix"
-	option := "path"
-	path := strings.Join([]string{"", prefix, option}, "/")
-	request, _ := http.NewRequest("GET", path, nil)
-
-	instance := NewRouter(prefix, "test", nil, NewRoute(pattern, Handler{"path"}, "test"))
-
-	mock := httptest.NewRecorder()
-
-	instance.ServeHTTP(mock, request)
-
-	if status := mock.Code; status != http.StatusOK {
-		test.Errorf("handler returned wrong status code: got %v, want %v",
-			status, http.StatusOK)
-		return
-	}
-
-	if mock.Body.String() != option {
-		test.Errorf("handler returned unexpected body: got %v, want %v",
-			mock.Body.String(), option)
-		return
-	}
-
-	request, _ = http.NewRequest("GET", "wrong", nil)
-	mock = httptest.NewRecorder()
-
-	instance.ServeHTTP(mock, request)
-
-	if status := mock.Code; status != http.StatusNotFound {
-		test.Errorf("handler returned wrong status code: got %v, want %v",
-			status, http.StatusOK)
-		return
-	}
-}
-
-func TestRouterHandleDefaultRoute(test *testing.T) {
-	instance := NewRouter(
-		"/api", "api",
-		NewRoute("", &CodeHandler{http.StatusNotImplemented}, "default"),
-		NewRouter("/v1", "v1", nil),
-		NewRouter(
-			"/v2", "v2",
-			NewRoute("", &CodeHandler{http.StatusNotAcceptable}, "default"),
-		),
-	)
-
-	request, _ := http.NewRequest("GET", "/api/", nil)
-	mock := httptest.NewRecorder()
-
-	instance.ServeHTTP(mock, request)
-
-	if status := mock.Code; status != http.StatusNotImplemented {
-		test.Errorf("Incorrect status code!\n")
-		test.Errorf("Expected: %d", http.StatusNotImplemented)
-		test.Errorf("Actual: %d", status)
-		return
-	}
-
-	request, _ = http.NewRequest("GET", "/api/v1/", nil)
-	mock = httptest.NewRecorder()
-
-	instance.ServeHTTP(mock, request)
-
-	if status := mock.Code; status != http.StatusNotImplemented {
-		test.Errorf("Incorrect status code!\n")
-		test.Errorf("Expected: %d", http.StatusNotImplemented)
-		test.Errorf("Actual: %d", status)
-		return
-	}
-
-	request, _ = http.NewRequest("GET", "/api/v2/", nil)
-	mock = httptest.NewRecorder()
-
-	instance.ServeHTTP(mock, request)
-
-	if status := mock.Code; status != http.StatusNotAcceptable {
-		test.Errorf("Incorrect status code!\n")
-		test.Errorf("Expected: %d", http.StatusNotAcceptable)
-		test.Errorf("Actual: %d", status)
-		return
+	for path, result := range tests {
+		if h, parameters := router.Resolve(path); !result.Check(h, parameters) {
+			test.Errorf("Test '%s' failed!", path)
+			test.Errorf("Handler: %v", h)
+			test.Fatalf("Parameters: %v", parameters)
+		}
 	}
 }
 
 func TestRouterReverse(test *testing.T) {
-	pattern := "(?P<path>.*)"
-	prefix := "prefix"
-	name := "test"
-	namespace := "root"
-	option := "path"
+	var api = New()
+	api.Add("/:name/endpoint/:id", &Handler{}, "endpoint")
 
-	instance := NewRouter(prefix, namespace, nil, NewRoute(pattern, Handler{"path"}, name))
+	var router = New()
+	router.AddRouter("api", api, "api")
 
-	path, found := instance.Reverse(name, map[string]string{"path": option})
-
-	if !found {
-		test.Error("route not reversed")
-		return
+	if path, err := router.Reverse("api:endpoint", "n", "1"); err != nil {
+		test.Fatal(err)
+	} else if path != "/api/n/endpoint/1" {
+		test.Error("Incorrect path!")
+		test.Error("Expected: /api/n/endpoint/1")
+		test.Fatalf("Got: %s", path)
 	}
+}
 
-	if want := fmt.Sprintf("/%v/%v", prefix, option); path != want {
-		test.Errorf("wrong prepared pattern: got %v, want %v", instance.prefix, want)
-		return
+func TestRouterNotFoundHandler(test *testing.T) {
+	var api = New()
+	api.NotFoundHandler = &Handler{}
+
+	var router = New()
+	router.AddRouter("api", api, "api")
+
+	if handler, _ := router.Resolve("/api/v1/path"); handler == nil {
+		test.Fatal("Expected handler!")
 	}
+}
 
-	_, found = instance.Reverse("wrong", map[string]string{})
+func BenchmarkRouterTwoParameters(benchmark *testing.B) {
+	var router = New()
 
-	if found {
-		test.Error("route reversed wrong")
-		return
+	router.Add(":user/activity/:activity", &Handler{}, "")
+
+	for i := 0; i < benchmark.N; i++ {
+		router.Resolve("/1/activity/2")
 	}
+}
 
-	_, found = instance.Reverse(fmt.Sprintf("%v:%v", namespace, "wrong"), map[string]string{})
+func BenchmarkRouterGreedy(benchmark *testing.B) {
+	var router = New()
 
-	if found {
-		test.Error("route reversed wrong")
-		return
+	router.Add("static/*path", &Handler{}, "")
+
+	for i := 0; i < benchmark.N; i++ {
+		router.Resolve("/static/path/to/static")
+	}
+}
+
+func BenchmarkRouterStatic(benchmark *testing.B) {
+	var router = New()
+
+	router.Add("/some/static/path", &Handler{}, "")
+	router.Add("/some/static2/path", &Handler{}, "")
+	router.Add("/some/static/path2", &Handler{}, "")
+
+	for i := 0; i < benchmark.N; i++ {
+		router.Resolve("/some/static/path")
+	}
+}
+
+func BenchmarkRouterReverse(benchmark *testing.B) {
+	var api = New()
+	api.Add("/:name/endpoint/:id", &Handler{}, "endpoint")
+
+	var router = New()
+	router.AddRouter("api", api, "api")
+
+	var parameters = []string{"n", "1"}
+
+	for i := 0; i < benchmark.N; i++ {
+		router.Reverse("api:endpoint", parameters...)
+	}
+}
+
+func BenchmarkRouterServeHTTP(benchmark *testing.B) {
+	var request, _ = http.NewRequest("GET", "/1/activity/2", nil)
+	var router = New()
+
+	router.Add(":user/activity/:activity", &Handler{}, "")
+
+	for i := 0; i < benchmark.N; i++ {
+		router.ServeHTTP(nil, request)
 	}
 }
