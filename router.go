@@ -12,9 +12,10 @@ import (
 const (
 	ParameterRune       = ':'
 	GreedyParameterRune = '*'
+	Key                 = key("parameters")
 )
 
-type Key string
+type key string
 
 type Router struct {
 	NotFoundHandler http.Handler
@@ -192,7 +193,7 @@ func (router *Router) Reverse(name string, parameters ...string) (string, error)
 
 func (router *Router) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	if handler, parameters := router.Resolve(request.URL.Path); handler != nil {
-		var ctx = context.WithValue(request.Context(), Key("parameters"), parameters)
+		var ctx = context.WithValue(request.Context(), Key, parameters)
 
 		handler.ServeHTTP(response, request.WithContext(ctx))
 	} else {
