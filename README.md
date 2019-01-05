@@ -1,47 +1,18 @@
-# gothite/routes #
+# govenant/routes #
+
 *Advanced URL routing for Go*
+
+[![](https://godoc.org/github.com/govenant/routes?status.svg)](http://godoc.org/github.com/govenant/routes)
 
 ## Installation ##
 
-`go get github.com/gothite/routes`
-
-or using [dep](https://github.com/golang/dep):
-
-`dep ensure -add github.com/gothite/routes`
-
+`go get -u github.com/govenant/routes`
 
 ## Usage ##
-```go
-package main
+See [examples](https://github.com/govenant/routes/blob/master/examples)
 
-import (
-	"log"
-	"net/http"
+## Changelog ##
+See [releases](https://github.com/govenant/routes/releases)
 
-	"github.com/gothite/routes"
-)
-
-type handler struct{}
-
-func (h handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	var parameters = request.Context().Value(routes.Key).([]string)
-	response.Write([]byte(parameters[0]))
-}
-
-func main() {
-	var v1 = routes.New()
-	v1.Add("/:param", &handler{}, "endpoint")
-
-	var api = routes.New()
-	api.AddRouter("/v1", v1, "v1")
-
-	var router = routes.New()
-	router.AddRouter("/api", api, "api")
-
-	path, _ := router.Reverse("api:v1:endpoint", "param")
-	log.Print(path) // /api/v1/param
-
-	http.Handle("/", router)
-	log.Fatal(http.ListenAndServe(":8000", nil))
-}
-```
+## License ##
+See [LICENSE](https://github.com/govenant/routes/blob/master/LICENSE)
