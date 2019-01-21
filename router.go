@@ -28,10 +28,7 @@ type Router struct {
 	parameters    []string
 	name          string
 	pattern       string
-}
-
-func (router *Router) IsEnd() bool {
-	return len(router.nodes) == 0
+	route         bool
 }
 
 func (router *Router) update(path []string, node *Router, name string) {
@@ -51,20 +48,24 @@ func (router *Router) update(path []string, node *Router, name string) {
 
 	if len(path) > 0 {
 		var tree *Router
-		var ok bool
+		var exists bool
+
+		if tree, exists = router.nodes[path[0]]; !exists {
+			tree = New()
+			tree.parameterized = parameterized
+			tree.greedy = greedy
+			tree.parameters = append(router.parameters, node.parameters...)
+
+			router.nodes[path[0]] = tree
+			router.names[name] = tree.pattern
+		}
 
 		if len(path) > 1 {
-			if tree, ok = router.nodes[path[0]]; !ok {
-				tree = New()
-				tree.parameterized = parameterized
-				tree.greedy = greedy
-				tree.parameters = router.parameters
-
-				router.nodes[path[0]] = tree
-				router.names[name] = tree.pattern
-			}
-
 			tree.update(path[1:], node, name)
+		} else if exists {
+			tree.parameterized = parameterized
+			tree.greedy = greedy
+			tree.parameters = node.parameters
 		} else {
 			node.parameterized = parameterized
 			node.greedy = greedy
@@ -76,12 +77,12 @@ func (router *Router) update(path []string, node *Router, name string) {
 		}
 
 		for name, pattern := range tree.names {
-			if tree.name != "" {
+			if !tree.route && tree.name != "" {
 				name = fmt.Sprintf("%s:%s", tree.name, name)
 			}
 
-			if tree.pattern != "" {
-				pattern = strings.TrimPrefix(pattern, "/")
+			if !tree.route && tree.pattern != "" {
+				pattern = strings.Trim(pattern, "/")
 				pattern = fmt.Sprintf("%s/%s", tree.pattern, pattern)
 			}
 
@@ -127,7 +128,7 @@ func (router *Router) Resolve(path string) (http.Handler, []string) {
 		}
 	}
 
-	if node.handler != nil && node.IsEnd() {
+	if node.handler != nil {
 		return node.handler, parameters
 	}
 
@@ -139,6 +140,7 @@ func (router *Router) Add(path string, handler http.Handler, name string) {
 	node.name = name
 	node.handler = handler
 	node.pattern = fmt.Sprintf("/%s", strings.Trim(path, "/"))
+	node.route = true
 
 	router.update(strings.Split(strings.Trim(path, "/"), "/"), node, name)
 }

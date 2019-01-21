@@ -76,6 +76,34 @@ func TestRouterNotFoundHandler(test *testing.T) {
 	}
 }
 
+func TestOverrideRoutes(test *testing.T) {
+	var v1 = New()
+	var api = New()
+	var root = New()
+
+	v1.Add("/path/add", &Handler{}, "path.add")
+	v1.Add("/path", &Handler{}, "path")
+	v1.Add("/path/:id", &Handler{}, "path.id")
+	v1.Add("/path/new", &Handler{}, "path.new")
+
+	api.AddRouter("/v1", v1, "v1")
+	root.AddRouter("/api", api, "api")
+
+	if handler, _ := root.Resolve("/api/v1/path/add"); handler == nil {
+		test.Fatal("/api/v1/path/add not found!")
+	}
+
+	if handler, _ := root.Resolve("/api/v1/path/new"); handler == nil {
+		test.Fatal("/api/v1/path/new not found!")
+	}
+
+	if path, err := root.Reverse("api:v1:path.id", "1"); err != nil {
+		test.Fatal(err)
+	} else if path != "/api/v1/path/1" {
+		test.Fatal(path)
+	}
+}
+
 func BenchmarkRouterTwoParameters(benchmark *testing.B) {
 	var router = New()
 
